@@ -1,0 +1,2 @@
+# Polylang Automatic Translator
+Polylangを使用しているWordPressサイトの翻訳を自動化するプラグインです。

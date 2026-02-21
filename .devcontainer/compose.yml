@@ -1,0 +1,77 @@
+# .devcontainer/docker-compose.yml
+services:
+  devcontainer:
+    image: mcr.microsoft.com/devcontainers/php:8
+    volumes:
+      - ..:/workspace/wp-polylang-autotranslator:cached
+    network_mode: service:wordpress
+    command: sleep infinity
+
+  db:
+    image: mariadb:latest
+    environment:
+      MYSQL_DATABASE: wp_db
+      MYSQL_USER: wp_user
+      MYSQL_PASSWORD: wp_password
+      MYSQL_ROOT_PASSWORD: root_password
+    volumes:
+      - db_data:/var/lib/mysql
+
+  wordpress:
+    image: wordpress:latest
+    user: "33:33"
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wp_user
+      WORDPRESS_DB_PASSWORD: wp_password
+      WORDPRESS_DB_NAME: wp_db
+      WORDPRESS_DEBUG: 1
+      WORDPRESS_CONFIG_EXTRA: |
+        define("WP_DEBUG_LOG", true);
+      WP_ENVIRONMENT_TYPE: local
+    volumes:
+      - wordpress_data:/var/www/html
+      - ..:/var/www/html/wp-content/plugins/wp-polylang-autotranslator
+    depends_on:
+      - db
+
+  wp-cli:
+    image: wordpress:cli
+    volumes_from:
+      - wordpress
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wp_user
+      WORDPRESS_DB_PASSWORD: wp_password
+      WORDPRESS_DB_NAME: wp_db
+    user: "33:33"
+    depends_on:
+      - db
+      - wordpress
+    command: >
+      /bin/sh -c '
+        echo "Waiting for DB..."
+        until wp db check --allow-root > /dev/null 2>&1; do sleep 2; done
+        echo "Waiting for WordPress files..."
+        until [ -f /var/www/html/wp-settings.php ]; do sleep 2; done
+
+        if ! wp core is-installed --allow-root; then
+          wp core install \
+            --url=http://localhost:8080 \
+            --title="Development" \
+            --admin_user=admin \
+            --admin_password=password \
+            --admin_email=admin@example.com \
+            --skip-email \
+            --allow-root
+        fi
+
+        wp plugin install polylang advanced-custom-fields --activate --allow-root
+        wp plugin activate wp-polylang-autotranslator --allow-root
+      '
+
+volumes:
+  db_data:
+  wordpress_data:

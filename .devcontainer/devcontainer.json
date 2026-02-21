@@ -1,0 +1,19 @@
+{
+  "name": "WordPress Dev Container",
+  "dockerComposeFile": "compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspace/wp-polylang-autotranslator",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2.5.6": {}
+  },
+  "forwardPorts": [
+    8080
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bmewburn.vscode-intelephense-client"
+      ]
+    }
+  }
+}
