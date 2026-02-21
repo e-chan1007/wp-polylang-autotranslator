@@ -8,5 +8,14 @@
     "allow-plugins": {
       "php-http/discovery": true
     }
+  },
+  "require": {
+    "deeplcom/deepl-php": "^1.16",
+    "google/cloud-translate": "^2.1"
+  },
+  "require-dev": {
+    "php-stubs/wordpress-stubs": "^6.9",
+    "php-stubs/acf-pro-stubs": "^6.5",
+    "wpsyntex/polylang-stubs": "^3.7"
   }
 }

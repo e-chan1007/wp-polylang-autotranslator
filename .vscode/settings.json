@@ -1,0 +1,9 @@
+{
+  "intelephense.stubs": [
+    "Core",
+    "json",
+    "pcre",
+    "standard",
+    "wordpress"
+  ]
+}
