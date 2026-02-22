@@ -2,13 +2,12 @@
 
 namespace WPPolylangAutoTranslator\TranslateEngine;
 
-use WPPolylangAutoTranslator\TranslatorInterface;
 use Google\Cloud\Translate\V3\Client\TranslationServiceClient;
 use Google\Cloud\Translate\V3\TranslateTextRequest;
 use Google\Auth\Credentials\ServiceAccountCredentials;
 
 
-class Google implements TranslatorInterface
+class Google extends AbstractTranslateEngine
 {
   private $client;
   private $formattedParent;
@@ -22,25 +21,24 @@ class Google implements TranslatorInterface
     $this->formattedParent = $this->client->locationName($config["json_key"]["project_id"], "global");
   }
 
-  public function translate(string $text, string $target_lang): string
+  protected function doTranslateBatch(array $texts, string $target_lang): array
   {
-    $contents = [$text];
-
     try {
       $request = (new TranslateTextRequest())
-        ->setContents($contents)
+        ->setContents($texts)
         ->setTargetLanguageCode($target_lang)
         ->setParent($this->formattedParent);
       $response = $this->client->translateText($request, [
         "format" => "html"
       ]);
 
+      $results = [];
       foreach ($response->getTranslations() as $translation) {
-        return $translation->getTranslatedText();
+        $results[] = $translation->getTranslatedText();
       }
+      return $results;
     } catch (\Exception $e) {
       throw new \Exception("Google translation error: " . $e->getMessage());
     }
-    throw new \Exception("Translation failed");
   }
 }

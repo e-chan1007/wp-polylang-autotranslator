@@ -2,12 +2,12 @@
 
 namespace WPPolylangAutoTranslator;
 
-use WPPolylangAutoTranslator\TranslatorInterface;
+use WPPolylangAutoTranslator\TranslateEngine\AbstractTranslateEngine;
 use WPPolylangAutoTranslator\TranslateEngine;
 
 class TranslationManager
 {
-  private function get_translator_engine(): TranslatorInterface
+  private function get_translator_engine(): AbstractTranslateEngine
   {
     $engine_type = get_option("auto_translator_engine", "deepl");
     if ($engine_type === "google") {
@@ -153,13 +153,33 @@ class TranslationManager
       $translate_lang = str_replace("_", "-", $languages_locale[$i]);
 
       $source_post = get_post($source_id, ARRAY_A);
+
+      $texts_to_translate = [
+        "title"   => $source_post["post_title"],
+        "content" => $source_post["post_content"],
+        "excerpt" => $source_post["post_excerpt"],
+      ];
+
+      $acf_fields = [];
+      if (function_exists("get_field_objects")) {
+        $acf_fields = get_field_objects($source_id);
+        if ($acf_fields) {
+          foreach ($acf_fields as $field) {
+            $this->collect_acf_texts($field, $texts_to_translate, "acf_" . $field["key"]);
+          }
+        }
+      }
+
+      $translated_values = $engine->translateBatch(array_values($texts_to_translate), $translate_lang);
+      $results = array_combine(array_keys($texts_to_translate), $translated_values);
+
       unset($source_post["ID"]);
       unset($source_post["guid"]);
 
       $translated_data = array_merge($source_post, [
-        "post_title"   => $engine->translate($source_post["post_title"], $translate_lang),
-        "post_content" => $engine->translate($source_post["post_content"], $translate_lang),
-        "post_excerpt" => $engine->translate($source_post["post_excerpt"], $translate_lang),
+        "post_title"   => $results["title"],
+        "post_content" => $results["content"],
+        "post_excerpt" => $results["excerpt"],
         "post_name"    => $source_post['post_name'] . "-{$lang_slug}",
       ]);
 
@@ -176,8 +196,11 @@ class TranslationManager
 
       update_post_meta($target_post_id, "auto_translated", true);
 
-      if (function_exists("get_field_objects")) {
-        $this->translate_acf_fields($engine, $source_id, $target_post_id, $translate_lang);
+      if ($acf_fields) {
+        foreach ($acf_fields as $field) {
+          $translated_value = $this->apply_acf_translations($field, $results, "acf_" . $field["key"]);
+          update_field($field["key"], $translated_value, $target_post_id);
+        }
       }
 
       if (class_exists("Permalink_Manager_URI_Functions")) {
@@ -186,41 +209,68 @@ class TranslationManager
     }
   }
 
-  private function translate_acf_fields($engine, $from_id, $to_id, $lang)
+  private function collect_acf_texts($field, &$texts, $path)
   {
-    $fields = get_field_objects($from_id);
-    if (!$fields) return;
+    if (empty($field["value"])) return;
 
-    foreach ($fields as $field) {
-      $translated_value = $this->process_acf_field_value($engine, $field, $lang);
-      update_field($field["key"], $translated_value, $to_id);
+    $type = $field["type"] ?? "";
+    $text_types = ["text", "textarea", "wysiwyg"];
+
+    if (in_array($type, $text_types)) {
+      $texts[$path] = $field["value"];
+    } elseif ($type === "repeater" && is_array($field["value"])) {
+      foreach ($field["value"] as $i => $row) {
+        foreach ($field["sub_fields"] as $sub_field) {
+          $sub_field_name = $sub_field["name"];
+          if (isset($row[$sub_field_name])) {
+            $sub_field_with_value = $sub_field;
+            $sub_field_with_value["value"] = $row[$sub_field_name];
+            $this->collect_acf_texts($sub_field_with_value, $texts, "{$path}.{$i}.{$sub_field_name}");
+          }
+        }
+      }
+    } elseif ($type === "group" && is_array($field["value"])) {
+      foreach ($field["sub_fields"] as $sub_field) {
+        $sub_field_name = $sub_field["name"];
+        if (isset($field["value"][$sub_field_name])) {
+          $sub_field_with_value = $sub_field;
+          $sub_field_with_value["value"] = $field["value"][$sub_field_name];
+          $this->collect_acf_texts($sub_field_with_value, $texts, "{$path}.{$sub_field_name}");
+        }
+      }
     }
   }
 
-  private function process_acf_field_value($engine, $field, $lang)
+  private function apply_acf_translations($field, $results, $path)
   {
-    $type = $field["type"];
     $value = $field["value"];
+    if (empty($value)) return $value;
 
+    $type = $field["type"] ?? "";
     $text_types = ["text", "textarea", "wysiwyg"];
-    if (in_array($type, $text_types) && !empty($value)) {
-      return $engine->translate($value, $lang);
-    }
 
-    if ($type === "repeater" && is_array($value)) {
+    if (in_array($type, $text_types)) {
+      return $results[$path] ?? $value;
+    } elseif ($type === "repeater" && is_array($value)) {
       foreach ($value as $i => $row) {
-        foreach (array_keys($row) as $sub_field_key) {
-          $sub_field = get_sub_field_object($sub_field_key);
-          $value[$i][$sub_field_key] = $this->process_acf_field_value($engine, $sub_field, $lang);
+        foreach ($field["sub_fields"] as $sub_field) {
+          $sub_field_name = $sub_field["name"];
+          if (isset($row[$sub_field_name])) {
+            $sub_field_with_value = $sub_field;
+            $sub_field_with_value["value"] = $row[$sub_field_name];
+            $value[$i][$sub_field_name] = $this->apply_acf_translations($sub_field_with_value, $results, "{$path}.{$i}.{$sub_field_name}");
+          }
         }
       }
       return $value;
-    }
-
-    if ($type === "group" && is_array($value)) {
-      foreach (array_keys($value) as $sub_field_key) {
-        $sub_field = get_sub_field_object($sub_field_key);
-        $value[$sub_field_key] = $this->process_acf_field_value($engine, $sub_field, $lang);
+    } elseif ($type === "group" && is_array($value)) {
+      foreach ($field["sub_fields"] as $sub_field) {
+        $sub_field_name = $sub_field["name"];
+        if (isset($value[$sub_field_name])) {
+          $sub_field_with_value = $sub_field;
+          $sub_field_with_value["value"] = $value[$sub_field_name];
+          $value[$sub_field_name] = $this->apply_acf_translations($sub_field_with_value, $results, "{$path}.{$sub_field_name}");
+        }
       }
       return $value;
     }
