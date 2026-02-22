@@ -3,7 +3,7 @@
 /**
  * Plugin Name: Polylang Automatic Translator
  * Description: Polylangを使用しているWordPressサイトの翻訳を自動化するプラグインです。ACFのカスタムフィールドも翻訳可能です。
- * Version: 1.0.0
+ * Version: 0.0.1
  */
 
 if (!defined("ABSPATH")) exit;

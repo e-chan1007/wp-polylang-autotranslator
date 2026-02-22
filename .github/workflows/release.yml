@@ -1,0 +1,58 @@
+name: Build and Release Plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Plugin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          tools: composer
+
+      - name: Install dependencies
+        run: composer install --no-dev --optimize-autoloader
+
+      - name: Create artifact directory
+        run: mkdir -p build/wp-polylang-autotranslator
+
+      - name: Move files to artifact directory
+        run: |
+          rsync -av --progress . build/wp-polylang-autotranslator \
+            --exclude .git \
+            --exclude .github \
+            --exclude .gitignore \
+            --exclude .vscode \
+            --exclude .devcontainer \
+            --exclude build \
+            --exclude stubs.php
+
+      - name: Zip the plugin
+        run: |
+          cd build
+          zip -r ../wp-polylang-autotranslator.zip wp-polylang-autotranslator
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: wp-polylang-autotranslator
+          path: wp-polylang-autotranslator.zip
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: wp-polylang-autotranslator.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
