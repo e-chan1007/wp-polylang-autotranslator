@@ -1,10 +1,11 @@
 (function (wp) {
+  const { apiFetch } = wp;
   const { subscribe, select, dispatch } = wp.data;
 
   let wasSaving = false;
   let isProcessing = false;
 
-  subscribe(() => {
+  subscribe(async () => {
     if (isProcessing) return;
 
     const editor = select("core/editor");
@@ -14,8 +15,8 @@
 
     if (wasSaving && !isSaving) {
       isProcessing = true;
-
-      const meta = editor.getEditedPostAttribute("meta");
+      const restBase = wp.data.select("core").getPostType(wp.data.select("core/editor").getCurrentPostType()).rest_base;
+      const { meta } = await apiFetch({ path: `/wp/v2/${restBase}/${editor.getCurrentPostId()}?_fields=meta` }).catch(() => ({}));
       const error = meta ? meta["_auto_translate_error"] : null;
 
       if (error) {
@@ -28,9 +29,7 @@
           }
         );
       }
-      setTimeout(() => {
-        isProcessing = false;
-      }, 500);
+      isProcessing = false;
     }
 
     wasSaving = isSaving;
