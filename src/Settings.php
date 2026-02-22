@@ -4,18 +4,26 @@ namespace WPPolylangAutoTranslator;
 
 class Settings
 {
-  public function init()
+  public function init($plugin_basename)
   {
-    add_action("admin_menu", [$this, "add_settings_page"]);
+    add_action("admin_menu", [$this, "add_settings_page"], 20);
     add_action("admin_init", [$this, "register_plugin_settings"]);
+
+    add_filter("plugin_action_links_{$plugin_basename}", function ($links) {
+      $settings_url = admin_url("admin.php?page=wp-polylang-auto-translator");
+      $settings_link = '<a href="' . esc_url($settings_url) . '">' . __('Settings') . '</a>';
+      array_unshift($links, $settings_link);
+      return $links;
+    });
   }
 
 
   public function add_settings_page()
   {
-    add_options_page(
-      "Auto Translator 設定",
-      "Auto Translator",
+    add_submenu_page(
+      "mlang",
+      "自動翻訳設定",
+      "自動翻訳",
       "manage_options",
       "wp-polylang-auto-translator",
       [$this, "render_settings_page"]
@@ -26,7 +34,21 @@ class Settings
   {
     register_setting("auto_translator_settings_group", "auto_translator_engine");
     register_setting("auto_translator_settings_group", "auto_translator_deepl_api_key");
-    register_setting("auto_translator_settings_group", "auto_translator_google_service_account_key");
+    register_setting("auto_translator_settings_group", "auto_translator_google_service_account_key", [
+      "sanitize_callback" => function ($input) {
+        if (empty($input)) return "";
+        $json = json_decode($input, true);
+        if (is_null($json)) {
+          add_settings_error(
+            "auto_translator_google_service_account_key",
+            "json_error",
+            "Google サービスアカウントキーが正しいJSON形式ではありません。"
+          );
+          return get_option("auto_translator_google_service_account_key");
+        }
+        return $input;
+      }
+    ]);
 
     add_settings_section("main_section", "API設定", null, "wp-polylang-auto-translator");
 
@@ -39,7 +61,7 @@ class Settings
   {
 ?>
     <div class="wrap">
-      <h1>Auto Translator 設定</h1>
+      <h1>自動翻訳設定</h1>
       <form method="post" action="options.php">
         <?php
         settings_fields("auto_translator_settings_group");
@@ -60,7 +82,10 @@ class Settings
   public function google_service_account_key_markup()
   {
     $key = get_option("auto_translator_google_service_account_key");
-    echo '<textarea name="auto_translator_google_service_account_key" rows="10" cols="50" class="regular-text code">' . esc_textarea($key) . '</textarea>';
+  ?>
+    <textarea name="auto_translator_google_service_account_key" rows="10" cols="50" class="regular-text code"><?php echo esc_textarea($key); ?></textarea>
+    <p class="description">Google Cloud Translation APIを有効化したプロジェクトで、Cloud Translation API ユーザーのロールを持つサービスアカウントを作成し、そのサービスアカウントキーをここに貼り付けてください。</p>
+  <?php
   }
 
   public function engine_markup()

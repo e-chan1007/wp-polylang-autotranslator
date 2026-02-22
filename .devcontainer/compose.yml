@@ -4,7 +4,6 @@ services:
     image: mcr.microsoft.com/devcontainers/php:8
     volumes:
       - ..:/workspace/wp-polylang-autotranslator:cached
-    network_mode: service:wordpress
     command: sleep infinity
 
   db:

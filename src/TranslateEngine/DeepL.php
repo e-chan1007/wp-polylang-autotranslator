@@ -18,9 +18,6 @@ class DeepL implements TranslatorInterface
   {
     try {
       $text = "<div>" . $text . "</div>";
-      if ($target_lang === "en") {
-        $target_lang = "en-US";
-      }
       $response = $this->client->translateText($text, null, $target_lang, [
         "tag_handling" => "html",
         "tag_handling_version" => "v2"

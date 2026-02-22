@@ -42,7 +42,7 @@ class TranslationManager
 
   public function add_auto_translate_trigger($post_type)
   {
-    if(!pll_is_translated_post_type($post_type)) return;
+    if (!pll_is_translated_post_type($post_type)) return;
     add_meta_box(
       "auto_translate_trigger",
       "自動翻訳設定",
@@ -58,7 +58,7 @@ class TranslationManager
       "show_in_rest" => true,
       "single"       => true,
       "type"         => "string",
-      "auth_callback" => function() {
+      "auth_callback" => function () {
         return current_user_can("edit_posts");
       }
     ]);
@@ -74,19 +74,19 @@ class TranslationManager
       pll_get_post_language($post_id) === pll_default_language()
     ) {
 ?>
-    <label>
-      <input type="checkbox" name="should_auto_translate">
-      保存時に他言語の記事を自動で生成する
-    </label>
-    <p class="description">記事の保存時に翻訳APIを実行して、他言語の記事を自動生成します。既に翻訳記事がある場合は内容を上書き更新します。</p>
-<?php
+      <label>
+        <input type="checkbox" name="should_auto_translate">
+        保存時に他言語の記事を自動で生成する
+      </label>
+      <p class="description">記事の保存時に翻訳APIを実行して、他言語の記事を自動生成します。既に翻訳記事がある場合は内容を上書き更新します。</p>
+    <?php
     } else {
-?>
-    <label>
-      <input type="checkbox" name="was_auto_translated" <?php checked(get_post_meta($post_id, "auto_translated", true)); ?>>
-      自動翻訳による記事として表示
-    </label>
-    <p class="description">この投稿は自動翻訳機能によって生成されたものであることを示します。テーマの設定によって、翻訳された記事を区別して表示することができます。</p>
+    ?>
+      <label>
+        <input type="checkbox" name="was_auto_translated" <?php checked(get_post_meta($post_id, "auto_translated", true)); ?>>
+        自動翻訳による記事として表示
+      </label>
+      <p class="description">この投稿は自動翻訳機能によって生成されたものであることを示します。テーマの設定によって、翻訳された記事を区別して表示することができます。</p>
 <?php
     }
   }
@@ -96,7 +96,7 @@ class TranslationManager
     if (wp_is_post_revision($post_id)) return;
 
     $nonce_valid = isset($_POST["should_auto_translate_nonce"]) &&
-                   wp_verify_nonce($_POST["should_auto_translate_nonce"], "save_auto_translate_trigger");
+      wp_verify_nonce($_POST["should_auto_translate_nonce"], "save_auto_translate_trigger");
 
     if (!$nonce_valid) return;
 
@@ -105,7 +105,9 @@ class TranslationManager
 
     if (!$this->should_translate($post_id)) {
       delete_post_meta($post_id, "_auto_translate_error");
-      if (get_post_meta($post_id, "auto_translated", true) && isset($_POST["was_auto_translated"]) && $_POST["was_auto_translated"] === "on") {
+      if (isset($_POST["was_auto_translated"]) && $_POST["was_auto_translated"] === "on") {
+        update_post_meta($post_id, "auto_translated", true);
+      } else {
         delete_post_meta($post_id, "auto_translated");
       }
     } else {
@@ -137,40 +139,51 @@ class TranslationManager
 
   private function translate_post($source_id)
   {
-    $translations = pll_get_post_translations($source_id);
-    $languages = pll_languages_list();
-    $engine = $this->get_translator_engine();
+    clean_post_cache($source_id);
 
-    foreach ($languages as $lang) {
-      if ($lang === pll_default_language()) continue;
-      $target_post_id = isset($translations[$lang]) ? $translations[$lang] : null;
-      $translated_data = [
-        "post_title"   => $engine->translate(get_the_title($source_id), $lang),
-        "post_content" => $engine->translate(get_post_field("post_content", $source_id), $lang),
-        "post_status"  => get_post_status($source_id),
-        "post_type"    => get_post_type($source_id),
-        "post_name"      => get_post_field("post_name", $source_id) . "-{$lang}",
-      ];
+    $languages_slug = pll_languages_list(["fields" => "slug"]);
+    $languages_locale = pll_languages_list(["fields" => "locale"]);
+    $engine = $this->get_translator_engine();
+    $default_lang = pll_default_language();
+
+    foreach ($languages_slug as $i => $lang_slug) {
+      if ($lang_slug === $default_lang) continue;
+
+      $target_post_id = pll_get_post($source_id, $lang_slug);
+      $translate_lang = str_replace("_", "-", $languages_locale[$i]);
+
+      $source_post = get_post($source_id, ARRAY_A);
+      unset($source_post["ID"]);
+      unset($source_post["guid"]);
+
+      $translated_data = array_merge($source_post, [
+        "post_title"   => $engine->translate($source_post["post_title"], $translate_lang),
+        "post_content" => $engine->translate($source_post["post_content"], $translate_lang),
+        "post_excerpt" => $engine->translate($source_post["post_excerpt"], $translate_lang),
+        "post_name"    => $source_post['post_name'] . "-{$lang_slug}",
+      ]);
 
       if ($target_post_id) {
         $translated_data["ID"] = $target_post_id;
         wp_update_post($translated_data);
       } else {
         $target_post_id = wp_insert_post($translated_data);
-        pll_set_post_language($target_post_id, $lang);
-        $translations[$lang] = $target_post_id;
+        pll_set_post_language($target_post_id, $lang_slug);
+        $current_translations = pll_get_post_translations($source_id);
+        $current_translations[$lang_slug] = $target_post_id;
+        pll_save_post_translations($current_translations);
       }
+
       update_post_meta($target_post_id, "auto_translated", true);
 
       if (function_exists("get_field_objects")) {
-        $this->translate_acf_fields($engine, $source_id, $target_post_id, $lang);
+        $this->translate_acf_fields($engine, $source_id, $target_post_id, $translate_lang);
       }
 
       if (class_exists("Permalink_Manager_URI_Functions")) {
         \Permalink_Manager_URI_Functions::save_single_uri($target_post_id, \Permalink_Manager_URI_Functions_Post::get_post_uri($source_id), false, true);
       }
     }
-    pll_save_post_translations($translations);
   }
 
   private function translate_acf_fields($engine, $from_id, $to_id, $lang)
