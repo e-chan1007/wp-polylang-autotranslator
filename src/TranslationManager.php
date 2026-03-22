@@ -21,6 +21,19 @@ class TranslationManager
     throw new \Exception("Invalid translation engine specified");
   }
 
+  public static function check_api_configuration()
+  {
+    $engine_type = get_option("auto_translator_engine", "deepl");
+
+    if ($engine_type === "google" && empty(get_option("auto_translator_google_service_account_key"))) {
+      return false;
+    }
+    if ($engine_type === "deepl" && empty(get_option("auto_translator_deepl_api_key"))) {
+      return false;
+    }
+    return true;
+  }
+
   public function init()
   {
     add_action("enqueue_block_editor_assets", [$this, "enqueue_editor_assets"]);
@@ -69,21 +82,25 @@ class TranslationManager
     wp_nonce_field("save_auto_translate_trigger", "should_auto_translate_nonce");
 
     $post_id = get_the_ID();
+    $is_available = self::check_api_configuration();
 
     if (
       pll_get_post_language($post_id) === pll_default_language()
     ) {
 ?>
       <label>
-        <input type="checkbox" name="should_auto_translate">
+        <input type="checkbox" name="should_auto_translate" <?php disabled(!$is_available); ?>>
         保存時に他言語の記事を自動で生成する
       </label>
       <p class="description">記事の保存時に翻訳APIを実行して、他言語の記事を自動生成します。既に翻訳記事がある場合は内容を上書き更新します。</p>
+      <?php if (!$is_available) : ?>
+        <p class="description" style="color: #b32d2e;">翻訳APIの設定が完了していません。<a href="<?php echo esc_url(admin_url("admin.php?page=wp-polylang-auto-translator")); ?>">設定ページ</a>でAPIキーを入力してください。</p>
+      <?php endif; ?>
     <?php
     } else {
     ?>
       <label>
-        <input type="checkbox" name="was_auto_translated" <?php checked(get_post_meta($post_id, "auto_translated", true)); ?>>
+        <input type="checkbox" name="was_auto_translated" <?php disabled(!$is_available); ?>>
         自動翻訳による記事として表示
       </label>
       <p class="description">この投稿は自動翻訳機能によって生成されたものであることを示します。テーマの設定によって、翻訳された記事を区別して表示することができます。</p>
